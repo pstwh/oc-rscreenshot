@@ -1,0 +1,177 @@
+#!/usr/bin/env bash
+
+# BASED ON:
+# https://github.com/jomo/oc-rscreenshot-screenshot
+
+initialize() {
+    declare -g -r CURRENT_VERSION="v0.1.0"
+    declare -g -a IMAGE_FILES
+
+
+    load_default_config
+}
+
+load_default_config() {
+    declare -g FILE_NAME_FORMAT="oc-rscreenshot-%Y_%m_%d-%H:%M:%S.png"
+    declare -g FILE_DIR="${XDG_PICTURES_DIR:-$HOME/Pictures}"
+     
+    declare -g NOTIFY_TIME="5000"
+
+    declare -g OC_RS_COMMAND="oc-rs %img"
+
+    if is_mac; then
+        declare -g SCREENSHOT_SELECT_COMMAND="screencapture -i %img"
+        declare -g SCREENSHOT_WINDOW_COMMAND="screencapture -iWa %img"
+        declare -g SCREENSHOT_FULL_COMMAND="screencapture %img"
+        declare -g OPEN_COMMAND="open %url"
+        declare -g CLIPBOARD_COMMAND="pbcopy"
+    else
+        declare -g SCREENSHOT_SELECT_COMMAND="scrot -s %img"
+        declare -g SCREENSHOT_WINDOW_COMMAND="scrot -s -b %img"
+        declare -g SCREENSHOT_FULL_COMMAND="scrot %img"
+        declare -g OPEN_COMMAND="xdg-open %url"
+        declare -g CLIPBOARD_COMMAND="xclip -selection clipboard"
+    fi
+}
+
+parse_args() {
+  while [ ${#} != 0 ]; do
+    case "${1}" in
+    -h | --help)
+      echo "usage: ${0} [--debug] [-c | -v | -h | -u]"
+      echo "       ${0} [--debug] [option]... [file]..."
+      echo ""
+      echo "      --debug                  Enable debugging, must be first option"
+      echo ""
+      echo "  -h, --help                   Show this help, exit"
+      echo "  -v, --version                Show current version, exit"
+      echo ""
+      echo "  -s, --select                 Take screenshot in select mode"
+      echo "  -w, --window                 Take screenshot in window mode"
+      echo "  -f, --full                   Take screenshot in full mode"
+      echo ""
+      echo "  file                         Upload file instead of taking a screenshot"
+      exit 0;;
+    -v | --version)
+      echo "oc-rscreenshot ${CURRENT_VERSION}"
+      exit 0;;
+    -s | --select)
+      MODE="SELECT"
+      shift;;
+    -w | --window)
+      MODE="WINDOW"
+      shift;;
+    -f | --full)
+      MODE="FULL"
+      shift;;
+    *)
+      break;;
+    esac || { echo "Failed to parse options" >&2 && exit 1; }
+  done
+}
+
+main() {    
+    handle_file "${upload_file}"
+}
+
+debug_mode() {
+  echo "########################################"
+  echo "Enabling debug mode"
+  echo "########################################"
+  echo ""
+  uname -a
+  for arg in ${0} "${@}"; do
+    echo -n "'${arg}' "
+  done
+  echo ""
+  set -o xtrace
+}
+
+is_mac() {
+  [ "$(uname -s)" = "Darwin" ]
+}
+
+notify() {
+  if is_mac; then
+    if command -v growlnotify &>/dev/null; then
+      growlnotify --title "${2}" --message "${3}"
+    else
+      terminal-notifier -title "oc-rscreenshot: ${2}" -message "${3}"
+    fi
+  else
+    if [ "${1}" = "error" ]; then
+      notify-send -a oc-rscreenshot -u critical -c "im.error" -t "${NOTIFY_TIME}" "oc-rscreenshot: ${2}" "${3}"
+    else
+      notify-send -a oc-rscreenshot -u low -c "transfer.complete" -t "${NOTIFY_TIME}" "oc-rscreenshot: ${2}" "${3}"
+    fi
+  fi
+}
+
+take_screenshot() {
+  local cmd shot_err
+
+  echo "Please select area"
+  is_mac || sleep 0.1
+
+  cmd="SCREENSHOT_${MODE}_COMMAND"
+  cmd=${!cmd//\%img/${1}}
+
+  if [ -z "${cmd}" ]; then
+    echo "Warning: SCREENSHOT_${MODE}_COMMAND is empty (MODE=${MODE})"
+    cmd=false
+  fi
+
+  shot_err="$(${cmd} 2>&1)"
+  if [ "${?}" != "0" ]; then
+    notify error "Something went wrong :(" "Information has been logged"
+    exit 1
+  fi
+}
+
+handle_file() {
+  local img_file edit_cmd
+
+  if [ -z "${1}" ]; then
+    cd "${FILE_DIR}" || exit 1
+    img_file="$(date +"${FILE_NAME_FORMAT}")"
+    take_screenshot "${img_file}"
+  else
+    img_file="${1}"
+  fi
+
+  img_file="$(cd "$( dirname "${img_file}")" && echo "$(pwd)/$(basename "${img_file}")")"
+
+  if [ ! -f "${img_file}" ]; then
+    echo "file '${img_file}' doesn't exist !"
+    exit 1
+  fi
+
+  if [ "${EDIT}" = "true" ]; then
+    edit_cmd=${EDIT_COMMAND//\%img/${img_file}}
+    echo "Opening editor '${edit_cmd}'"
+    if ! (eval "${edit_cmd}"); then
+      notify error "Something went wrong :("
+      exit 1
+    fi
+  fi
+
+  oc-rs "$img_file"| pbcopy
+  notify ok "Copied!"
+#   cmd = "$OC_RS_COMMAND"
+#   cmd=${!cmd//\%img_file/${1}}
+#   "${cmd}" | $CLIPBOARD_COMMAND
+
+  if [ "${KEEP_FILE}" = "false" ] && [ -z "${1}" ]; then
+    echo "Deleting temp file ${FILE_DIR}/${img_file}"
+    rm -f "${img_file}"
+  fi
+}
+
+if [ "${1}" = "--debug" ]; then
+  debug_mode "${@}"
+  shift
+fi
+
+initialize
+parse_args "${@}"
+main
