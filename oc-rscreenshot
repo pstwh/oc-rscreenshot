@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # BASED ON:
-# https://github.com/jomo/oc-rscreenshot-screenshot
+# https://github.com/jomo/imgur-screenshot
 
 initialize() {
     declare -g -r CURRENT_VERSION="v0.1.0"
@@ -15,11 +15,9 @@ load_default_config() {
     declare -g FILE_NAME_FORMAT="oc-rscreenshot-%Y_%m_%d-%H:%M:%S.png"
     declare -g FILE_DIR="${XDG_PICTURES_DIR:-$HOME/Pictures}"
      
-    declare -g NOTIFY_TIME="5000"
-
     declare -g OC_RS_COMMAND="oc-rs %img"
 
-    if is_mac; then
+    if is_mac; then 
         declare -g SCREENSHOT_SELECT_COMMAND="screencapture -i %img"
         declare -g SCREENSHOT_WINDOW_COMMAND="screencapture -iWa %img"
         declare -g SCREENSHOT_FULL_COMMAND="screencapture %img"
@@ -50,7 +48,6 @@ parse_args() {
       echo "  -w, --window                 Take screenshot in window mode"
       echo "  -f, --full                   Take screenshot in full mode"
       echo ""
-      echo "  file                         Upload file instead of taking a screenshot"
       exit 0;;
     -v | --version)
       echo "oc-rscreenshot ${CURRENT_VERSION}"
@@ -91,22 +88,6 @@ is_mac() {
   [ "$(uname -s)" = "Darwin" ]
 }
 
-notify() {
-  if is_mac; then
-    if command -v growlnotify &>/dev/null; then
-      growlnotify --title "${2}" --message "${3}"
-    else
-      terminal-notifier -title "oc-rscreenshot: ${2}" -message "${3}"
-    fi
-  else
-    if [ "${1}" = "error" ]; then
-      notify-send -a oc-rscreenshot -u critical -c "im.error" -t "${NOTIFY_TIME}" "oc-rscreenshot: ${2}" "${3}"
-    else
-      notify-send -a oc-rscreenshot -u low -c "transfer.complete" -t "${NOTIFY_TIME}" "oc-rscreenshot: ${2}" "${3}"
-    fi
-  fi
-}
-
 take_screenshot() {
   local cmd shot_err
 
@@ -123,7 +104,6 @@ take_screenshot() {
 
   shot_err="$(${cmd} 2>&1)"
   if [ "${?}" != "0" ]; then
-    notify error "Something went wrong :(" "Information has been logged"
     exit 1
   fi
 }
@@ -150,21 +130,11 @@ handle_file() {
     edit_cmd=${EDIT_COMMAND//\%img/${img_file}}
     echo "Opening editor '${edit_cmd}'"
     if ! (eval "${edit_cmd}"); then
-      notify error "Something went wrong :("
       exit 1
     fi
   fi
 
-  oc-rs "$img_file"| pbcopy
-  notify ok "Copied!"
-#   cmd = "$OC_RS_COMMAND"
-#   cmd=${!cmd//\%img_file/${1}}
-#   "${cmd}" | $CLIPBOARD_COMMAND
-
-  if [ "${KEEP_FILE}" = "false" ] && [ -z "${1}" ]; then
-    echo "Deleting temp file ${FILE_DIR}/${img_file}"
-    rm -f "${img_file}"
-  fi
+  oc-rs "${img_file}" text true | "${CLIPBOARD_COMMAND}"
 }
 
 if [ "${1}" = "--debug" ]; then
